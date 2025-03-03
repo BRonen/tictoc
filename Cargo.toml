@@ -9,3 +9,8 @@ tokio = { version = "1.43.0", features = ["full"] }
 tower = "0.5.2"
 serde = { version = "1.0.218", features = ["derive"] }
 serde_json = "1.0.140"
+jsonwebtoken = "9.3.1"
+bcrypt = "0.17.0"
+sqlx = { version = "0.8.3", features = ["runtime-tokio", "postgres"] }
+dotenv = "0.15.0"
+uuid = { version = "1.15.1", features = ["v4"] }

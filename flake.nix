@@ -10,7 +10,7 @@
       in {
         defaultPackage = pkgs.mkShell {
           name = "tictoc";
-          buildInputs = with pkgs;[ rustc cargo ];
+          buildInputs = with pkgs;[ rustc cargo openssl ];
 
           shellHook = "cargo --version & rustc --version";
         };

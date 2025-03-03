@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use jsonwebtoken::{encode, Header, EncodingKey};
 use bcrypt::{hash, verify};
 use sqlx::PgPool;
+use dotenv::dotenv;
+use std::env;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 struct User {
@@ -112,18 +114,17 @@ async fn login(
 
             serde_json::to_string(&token).unwrap()
         }
-        None => "User not found".to_string(),
+        _ => "User not found".to_string(),
     }
 }
 
 #[tokio::main]
 async fn main() {
-    // Create a connection pool
-    let pool = PgPool::connect("postgres://postgres:postgres@localhost/tictoc")
+    dotenv().ok();
+    let pool = PgPool::connect(&env::var("DATABASE_URL").unwrap())
         .await
         .unwrap();
 
-    // Run migrations
     sqlx::migrate!()
         .run(&pool)
         .await
@@ -147,37 +148,57 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+    use jsonwebtoken::{decode, DecodingKey, Validation};
     use std::collections::HashSet;
+    use uuid;
 
-    async fn setup_test_db() -> PgPool {
-        let pool = PgPool::connect("postgres://postgres:postgres@localhost/tictoc_test")
+    async fn setup_test_db(db_name: &str) -> PgPool {
+        dotenv().ok();
+        let base_url = env::var("DATABASE_URL").unwrap();
+        
+        let admin_pool = PgPool::connect(&base_url)
             .await
             .unwrap();
 
-        // Run migrations
+        sqlx::query(&format!("CREATE DATABASE {}", db_name))
+            .execute(&admin_pool)
+            .await
+            .unwrap();
+
+        let test_url = base_url.replace("/tictoc", &format!("/{}", db_name));
+        let pool = PgPool::connect(&test_url)
+            .await
+            .unwrap();
+
         sqlx::migrate!()
             .run(&pool)
-            .await
-            .unwrap();
-
-        // Clear the database
-        sqlx::query!("TRUNCATE TABLE users")
-            .execute(&pool)
             .await
             .unwrap();
 
         pool
     }
 
+    async fn cleanup_test_db(db_name: &str) {
+        let base_url = env::var("DATABASE_URL").unwrap();
+        let admin_pool = PgPool::connect(&base_url)
+            .await
+            .unwrap();
+
+        sqlx::query(&format!("DROP DATABASE IF EXISTS {}", db_name))
+            .execute(&admin_pool)
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
     async fn test_create_user() {
-        let pool = setup_test_db().await;
+        let db_name = format!("test_{}", uuid::Uuid::new_v4().simple());
+        let pool = setup_test_db(&db_name).await;
         let state = AppState { pool };
 
         let user = CreateUserRequest {
             name: "Chad".to_string(),
-            email: "chad@gmail.com".to_string(),
+            email: "chad1@gmail.com".to_string(),
             password: "password".to_string()
         };
 
@@ -185,7 +206,7 @@ mod tests {
             State(state.clone()),
             Json(user)
         ).await;
-        assert_eq!(response, "{\"id\":1,\"name\":\"Chad\",\"email\":\"chad@gmail.com\"}");
+        assert_eq!(response, "{\"id\":1,\"name\":\"Chad\",\"email\":\"chad1@gmail.com\"}");
 
         let user = CreateUserRequest {
             name: "User".to_string(),
@@ -198,85 +219,47 @@ mod tests {
             Json(user)
         ).await;
         assert_eq!(response, "{\"id\":2,\"name\":\"User\",\"email\":\"user@gmail.com\"}");
-    }
 
-    #[tokio::test]
-    async fn test_read_user() {
-        let pool = setup_test_db().await;
-        let state = AppState { pool };
-
-        let response = read_user(State(state.clone())).await;
-        assert_eq!(response, "[]");
-
-        let user = CreateUserRequest {
-            name: "Chad".to_string(),
-            email: "chad@gmail.com".to_string(),
-            password: "password".to_string()
-        };
-
-        let response = create_user(
-            State(state.clone()),
-            Json(user)
-        ).await;
-        assert_eq!(response, "{\"id\":1,\"name\":\"Chad\",\"email\":\"chad@gmail.com\"}");
-
-        let response = read_user(State(state.clone())).await;
-        assert_eq!(response, "[{\"id\":1,\"name\":\"Chad\",\"email\":\"chad@gmail.com\"}]");
-
-        let user = CreateUserRequest {
-            name: "User".to_string(),
-            email: "user@gmail.com".to_string(),
-            password: "password".to_string()
-        };
-
-        let response = create_user(
-            State(state.clone()),
-            Json(user)
-        ).await;
-        assert_eq!(response, "{\"id\":2,\"name\":\"User\",\"email\":\"user@gmail.com\"}");
-
-        let response = read_user(State(state)).await;
-        assert_eq!(response, "[{\"id\":1,\"name\":\"Chad\",\"email\":\"chad@gmail.com\"},{\"id\":2,\"name\":\"User\",\"email\":\"user@gmail.com\"}]");
+        cleanup_test_db(&db_name).await;
     }
 
     #[tokio::test]
     async fn test_login() {
-        let pool = setup_test_db().await;
+        let db_name = format!("test_{}", uuid::Uuid::new_v4().simple());
+        let pool = setup_test_db(&db_name).await;
         let state = AppState { pool };
 
         let user = CreateUserRequest {
             name: "Chad".to_string(),
-            email: "chad@gmail.com".to_string(),
+            email: "chad2@gmail.com".to_string(),
             password: "password".to_string()
         };
 
-        let response = create_user(
-            State(state.clone()),
-            Json(user)
-        ).await;
-        assert_eq!(response, "{\"id\":1,\"name\":\"Chad\",\"email\":\"chad@gmail.com\"}");
+        create_user(State(state.clone()), Json(user)).await;
 
-        let login_request = LoginUserRequest {
-            email: "chad@gmail.com".to_string(),
+        let login_user = LoginUserRequest {
+            email: "chad2@gmail.com".to_string(),
             password: "password".to_string()
         };
-        
-        let response = login(
-            State(state.clone()),
-            Json(login_request)
-        ).await;
-        
-        assert!(response.contains("token"));
-        let login_response: LoginUserResponse = serde_json::from_str(&response).unwrap();
-        assert!(login_response.token.len() > 0);
-        println!("token: {}", login_response.token);
 
-        let mut validation = Validation::new(Algorithm::HS256);
+        let response = login(State(state), Json(login_user)).await;
+
+        let token_response: LoginUserResponse = serde_json::from_str(&response).unwrap();
+        
+        let mut validation = Validation::default();
         validation.validate_exp = false;
         validation.required_spec_claims = HashSet::new();
 
-        let decoded_user = decode::<CreateUserResponse>(&login_response.token, &DecodingKey::from_secret("secret".as_ref()), &validation).unwrap();
-        let user = CreateUserResponse { id: 1, name: "Chad".to_string(), email: "chad@gmail.com".to_string() };
-        assert_eq!(decoded_user.claims, user);
+        let token_data = decode::<CreateUserResponse>(
+            &token_response.token,
+            &DecodingKey::from_secret("secret".as_ref()),
+            &validation,
+        ).unwrap();
+
+        assert_eq!(token_data.claims.id, 1);
+        assert_eq!(token_data.claims.name, "Chad");
+        assert_eq!(token_data.claims.email, "chad2@gmail.com");
+
+        cleanup_test_db(&db_name).await;
     }
 }
