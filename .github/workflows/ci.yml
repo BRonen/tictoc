@@ -27,6 +27,6 @@ jobs:
       - name: Install dependencies
         run: nix develop
       - name: Setup database
-        run: sqlx database create
+        run: nix develop --command sqlx database create
       - name: Run tests
-        run: cargo test
+        run: nix develop --command cargo test
