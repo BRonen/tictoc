@@ -10,9 +10,9 @@
       in {
         defaultPackage = pkgs.mkShell {
           name = "tictoc";
-          buildInputs = with pkgs;[ rustc cargo openssl ];
+          buildInputs = with pkgs;[ rustc cargo sqlx-cli openssl ];
 
-          shellHook = "cargo --version & rustc --version";
+          shellHook = "cargo --version & rustc --version & sqlx --version";
         };
       }
     );
