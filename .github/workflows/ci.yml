@@ -26,5 +26,7 @@ jobs:
           nix_path: nixpkgs=channel:nixos-24.11
       - name: Install dependencies
         run: nix develop
-      - name: run tests
+      - name: Setup database
+        run: cargo sqlx database create
+      - name: Run tests
         run: cargo test
