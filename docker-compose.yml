@@ -1,5 +1,5 @@
 services:
-  pg:
+  postgres:
     image: postgres
     environment:
       POSTGRES_USER: postgres
